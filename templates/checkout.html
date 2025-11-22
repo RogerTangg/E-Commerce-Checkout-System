@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CartBliss Checkout</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+    <div class="container">
+
+        <header>
+            <h1>結帳</h1>
+        </header>
+
+        <div class="options-container">
+            <div class="option">
+                <h3>付款方式</h3>
+                <button class="option-button" onclick="window.location.href='{{ url_for('payment') }}'">選擇付款方式</button>
+            </div>
+            <div class="option">
+                <h3>收貨方式</h3>
+                <button class="option-button" onclick="alert('收貨方式功能開發中')">選擇收貨方式</button>
+            </div>
+            <div class="option">
+                <h3>發票載具</h3>
+                <button class="option-button" onclick="alert('發票載具功能開發中')">選擇發票載具</button>
+            </div>
+        </div>
+
+        <div class="order-summary">
+            <h2>訂單總計</h2>
+            <p>商品總額: ${{ cart.subtotal }}</p>
+            <p>運費: ${{ cart.shipping_fee }}</p>
+            <p>總計: ${{ cart.total }}</p>
+        </div>
+
+        <button id="checkoutButton" onclick="window.location.href='{{ url_for('payment') }}'">結帳</button>
+    </div>
+
+</body>
+
+</html>

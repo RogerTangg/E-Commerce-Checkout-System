@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>付款方式 - CartBliss Checkout</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+    <div class="container">
+
+        <header>
+            <h1>付款方式</h1>
+        </header>
+
+        <div class="payment-section">
+            <div class="payment-options">
+                <button class="tab active" data-target="creditCard" 信用卡付款 (Credit Card)</button>
+                    <button class="tab" data-target="cod">貨到付款 (Cash on Delivery)</button>
+            </div>
+
+            <div id="creditCardFields" class="tab-content active">
+                <form id="checkoutForm" method="POST" action="{{ url_for('checkout') }}">
+                    <h3>信用卡資訊</h3>
+                    <label for="cardNumber">信用卡號碼:</label>
+                    <input type="text" id="cardNumber" name="card_number" placeholder="XXXX-XXXX-XXXX-XXXX"
+                        maxlength="19" required>
+                    <label for="expiryDate">到期日:</label>
+                    <input type="text" id="expiryDate" name="expiry_date" placeholder="MM/YY" maxlength="5" required>
+                    <label for="cvv">CVV:</label>
+                    <input type="text" id="cvv" name="cvv" placeholder="XXX" maxlength="3" required>
+
+                    <input type="hidden" name="delivery_method" value="宅配">
+                    <input type="hidden" name="invoice_type" value="手機載具">
+                </form>
+            </div>
+
+            <div id="codDetails" class="tab-content">
+                <p>您選擇貨到付款，商品送達時再付款即可。</p>
+                <p>目前僅支援台灣本島地區。</p>
+            </div>
+        </div>
+
+        <div class="order-summary">
+            <h2>訂單總計</h2>
+            <p>商品總額: ${{ cart.subtotal }}</p>
+            <p id="codFee" style="display:none;">貨到付款手續費: $<span id="codFeeAmount">0</span></p>
+            <p>運費: $<span id="shippingFee">{{ cart.shipping_fee }}</span></p>
+            <p>總計: $<span id="totalAmount">{{ cart.total }}</span></p>
+        </div>
+
+        <button type="submit" form="checkoutForm" id="checkoutButton">結帳</button>
+
+        <div id="messageArea"></div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+
+</html>
