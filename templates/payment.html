@@ -2,10 +2,10 @@
 <html lang="zh-TW">
 
 <head>
-    <met charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>付款方式 - CartBliss Checkout</title>
-        <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>付款方式 - CartBliss Checkout</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 
 <body>
@@ -20,13 +20,19 @@
             <div class="payment-options">
                 <button class="tab active" data-target="creditCard">信用卡付款 (Credit Card)</button>
                 {% if enable_cod %}
+                <!-- COD Tab - 僅在 Feature Toggle 啟用時顯示 -->
                 <button class="tab" data-target="cod">貨到付款 (Cash on Delivery)</button>
                 {% endif %}
             </div>
 
+            <!-- 信用卡表單 -->
             <div id="creditCardFields" class="tab-content active">
                 <form id="checkoutForm" method="POST" action="{{ url_for('checkout') }}">
                     <h3>信用卡資訊</h3>
+
+                    <!-- 隱藏欄位：付款方式 -->
+                    <input type="hidden" name="payment_method" value="credit_card">
+
                     <label for="cardNumber">信用卡號碼:</label>
                     <input type="text" id="cardNumber" name="card_number" placeholder="XXXX-XXXX-XXXX-XXXX"
                         maxlength="19" required>
@@ -40,11 +46,22 @@
                 </form>
             </div>
 
-            <!-- 貨到付款內容 (Feature Toggle: enable_cod) -->
             {% if enable_cod %}
+            <!-- COD Content - 僅在 Feature Toggle 啟用時顯示 -->
             <div id="codDetails" class="tab-content">
-                <p>您選擇貨到付款，商品送達時再付款即可。</p>
-                <p>目前僅支援台灣本島地區。</p>
+                <form id="codForm" method="POST" action="{{ url_for('checkout') }}">
+                    <h3>貨到付款</h3>
+
+                    <!-- 隱藏欄位：付款方式 -->
+                    <input type="hidden" name="payment_method" value="cod">
+
+                    <p>您選擇貨到付款，商品送達時再付款即可。</p>
+                    <p>目前僅支援台灣本島地區。</p>
+                    <p><strong>注意：</strong>貨到付款需酌收 $30 手續費。</p>
+
+                    <input type="hidden" name="delivery_method" value="宅配">
+                    <input type="hidden" name="invoice_type" value="手機載具">
+                </form>
             </div>
             {% endif %}
         </div>
@@ -52,12 +69,11 @@
         <div class="order-summary">
             <h2>訂單總計</h2>
             <p>商品總額: ${{ cart.subtotal }}</p>
-            <p id="codFee" style="display:none;">貨到付款手續費: $<span id="codFeeAmount">0</span></p>
             <p>運費: $<span id="shippingFee">{{ cart.shipping_fee }}</span></p>
             <p>總計: $<span id="totalAmount">{{ cart.total }}</span></p>
         </div>
 
-        <button type="submit" form="checkoutForm" id="checkoutButton">結帳</button>
+        <button type="button" id="checkoutButton">結帳</button>
 
         <div id="messageArea"></div>
     </div>
