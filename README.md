@@ -32,32 +32,7 @@
 
 ---
 
-## 快速開始 (Quick Start)
-
-### 1. 安裝 Python 依賴
-
-```bash
-pip install -r requirements.txt
-```
-
-### 2. 執行應用程式
-
-```bash
-python app.py
-```
-
-應用程式將在 `http://localhost:5000` 啟動
-
-### 3. 開啟瀏覽器
-
-在瀏覽器中訪問:
-```
-http://localhost:5000
-```
-
-### 4. 測試結帳流程
-
-使用以下測試卡號:
+## 使用以下測試卡號:
 - **卡號**: `4111-1111-1111-1111`
 - **到期日**: `12/25`
 - **CVV**: `123`
@@ -102,24 +77,6 @@ DevOps E-Commerce/
 - 總計: **$220**
 
 ### 區塊 D: 行動呼籲
-- 綠色全寬結帳按鈕
-- AJAX 提交 (無頁面刷新)
-- 即時訊息回饋
-
----
-
-## 開發原則 (Development Principles)
-
-本專案遵循 `constitution.md` 中定義的開發準則:
-
-### 程式碼品質
-- ✅ 模組化設計 (路由、模板、靜態資源分離)
-- ✅ 清晰的函數與變數命名
-- ✅ 完善的錯誤處理
-
-### 使用者體驗
-- ✅ 統一的綠色主色調設計系統
-- ✅ 響應式設計 (Mobile-first approach)
 - ✅ 即時表單驗證與回饋
 
 ### 文件規範
@@ -203,11 +160,11 @@ DevOps E-Commerce/
 
 此為 Baseline 版本，後續可能加入:
 
-- 🔄 多種付款方式 (PayPal, Apple Pay)
-- 🚚 免運邏輯 (滿額免運提示)
-- 💳 真實付款串接 (Stripe, TapPay)
-- 💾 資料庫整合 (訂單儲存至 PostgreSQL/MySQL)
-- 📧 訂單確認信 (Email notification)
+- 多種付款方式 (PayPal, Apple Pay)
+- 免運邏輯 (滿額免運提示)
+- 真實付款串接 (Stripe, TapPay)
+- 資料庫整合 (訂單儲存至 PostgreSQL/MySQL)
+- 訂單確認信 (Email notification)
 
 ---
 

@@ -135,25 +135,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 checkoutButton.disabled = false;
 
                 if (data.status === 'success') {
-                    showMessage(data.message, 'success');
-
-                    if (data.order) {
-                        const orderInfo = `
-                        <div class="alert alert-success" style="margin-top: 10px;">
-                            <strong>訂單編號:</strong> ${data.order.order_id}<br>
-                            <strong>付款方式:</strong> ${data.order.payment_method}<br>
-                            <strong>付款金額:</strong> $${data.order.total}<br>
-                            <strong>訂單狀態:</strong> ${data.order.status}
-                        </div>
-                    `;
-                        messageArea.innerHTML += orderInfo;
-                    }
-
-                    // 重置表單
-                    const activeTab = document.querySelector('.tab.active');
-                    if (activeTab && activeTab.dataset.target === 'creditCard') {
-                        document.getElementById('checkoutForm').reset();
-                    }
+                    // 結帳成功，導向至成功頁面
+                    const params = new URLSearchParams({
+                        order_id: data.order.order_id,
+                        total: data.order.total,
+                        payment_method: data.order.payment_method,
+                        delivery_method: data.order.delivery_method
+                    });
+                    window.location.href = `/success?${params.toString()}`;
                 } else {
                     showMessage(data.message || '結帳失敗，請稍後再試', 'error');
                 }

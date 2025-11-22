@@ -1,4 +1,5 @@
 {
-    "enable_cod": false,
-    "description": "Feature Toggle for Cash on Delivery payment method"
+    "enable_cod": true,
+    "enable_free_shipping_nudge": true,
+    "description": "Feature Toggles configuration"
 }
