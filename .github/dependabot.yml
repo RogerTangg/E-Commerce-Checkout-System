@@ -1,32 +1,9 @@
 version: 2
 updates:
-  # 1️⃣ 檢查 Python 套件 (requirements.txt)
-  - package-ecosystem: "pip"          # 使用 pip (requirements.txt) 生態系
-    directory: "/"                    # requirements.txt 在專案根目錄
+  # 掃 Python 套件（requirements.txt）
+  - package-ecosystem: "pip"
+    directory: "/"          # requirements.txt 在 repo 根目錄
     schedule:
-      interval: "weekly"              # 每週檢查一次；可改成 daily / monthly
-    open-pull-requests-limit: 10      # 最多同時 10 個 PR
-    # 只要有新版或安全性問題就幫你開 PR
+      interval: "weekly"    # 每週掃一次，可以改成 daily / monthly
     allow:
-      - dependency-type: "all"        # all = production + development
-    labels:
-      - "dependencies"
-      - "security"
-    commit-message:
-      prefix: "deps"
-      include: "scope"
-    # 如果你只想要安全更新，也可以改用 security-updates
-    # security-updates: true
-
-  # 2️⃣（可選）如果之後有 GitHub Actions Workflow 也想一起檢查
-  - package-ecosystem: "github-actions"
-    directory: "/"                    # .github/workflows 在根目錄下
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-    labels:
-      - "ci"
-      - "dependencies"
-    commit-message:
-      prefix: "ci-deps"
-      include: "scope"
+      - dependency-type: "all"   # production + dev 都一起管
