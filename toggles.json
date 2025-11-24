@@ -1,6 +1,5 @@
 {
     "enable_cod": true,
-    "description": "Feature toggle for Cash on Delivery (COD) payment method",
-    "last_updated": "2025-11-23",
-    "updated_by": "DevOps Team"
+    "enable_free_shipping_nudge": false,
+    "description": "Feature Toggles configuration"
 }

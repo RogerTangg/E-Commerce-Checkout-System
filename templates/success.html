@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>結帳成功 - CartBliss</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .success-container {
+            max-width: 600px;
+            margin: 50px auto;
+            text-align: center;
+            padding: 40px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .success-icon {
+            color: #4CAF50;
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+
+        .order-details {
+            text-align: left;
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            border: 1px solid #eee;
+        }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px dashed #ddd;
+        }
+
+        .detail-row:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .detail-label {
+            color: #666;
+            font-weight: bold;
+        }
+
+        .detail-value {
+            color: #333;
+        }
+
+        .home-button {
+            display: inline-block;
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 30px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+
+        .home-button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <div class="success-container">
+            <div class="success-icon">✓</div>
+            <h1>訂單已成功建立！</h1>
+            <p>感謝您的購買，我們將盡快為您安排出貨。</p>
+
+            <div class="order-details">
+                <div class="detail-row">
+                    <span class="detail-label">訂單編號</span>
+                    <span class="detail-value">{{ order_id }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">付款金額</span>
+                    <span class="detail-value">${{ total }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">付款方式</span>
+                    <span class="detail-value">{{ payment_method }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">運送方式</span>
+                    <span class="detail-value">{{ delivery_method }}</span>
+                </div>
+            </div>
+
+            <a href="{{ url_for('index') }}" class="home-button">返回首頁</a>
+        </div>
+    </div>
+
+</body>
+
+</html>
