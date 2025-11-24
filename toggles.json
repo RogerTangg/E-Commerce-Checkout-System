@@ -1,5 +1,5 @@
 {
     "enable_cod": true,
-    "enable_free_shipping_nudge": true,
+    "enable_free_shipping_nudge": false,
     "description": "Feature Toggles configuration"
 }
