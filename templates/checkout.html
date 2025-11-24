@@ -17,10 +17,12 @@
         </header>
 
         <div class="options-container">
+            {% if toggles.enable_cod %}
             <div class="option">
                 <h3>付款方式</h3>
                 <button class="option-button" onclick="window.location.href='{{ url_for('payment') }}'">選擇付款方式</button>
             </div>
+            {% endif %}
             <div class="option">
                 <h3>收貨方式</h3>
                 <button class="option-button" onclick="alert('收貨方式功能開發中')">選擇收貨方式</button>
