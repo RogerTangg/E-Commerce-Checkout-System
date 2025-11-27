@@ -531,7 +531,7 @@
             return div;
         }
 
-        // Update metrics on page load and every 5 seconds (更快的更新頻率)
+        // Update metrics on page load and every 30 seconds
         updateMetrics();
         updateServices();
         updateLogs();
@@ -539,7 +539,7 @@
             updateMetrics();
             updateServices();
             updateLogs();
-        }, 5000);
+        }, 30000);
     </script>
 </body>
 </html>
