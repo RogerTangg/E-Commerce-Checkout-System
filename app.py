@@ -124,6 +124,36 @@ def calculate_cart_totals(cart_items):
     }
 
 
+@app.route('/cart')
+def cart():
+    """
+    購物車頁面路由
+    (Cart route - Display cart with free shipping nudge)
+    """
+    toggles = load_toggles()
+    enable_nudge = toggles.get('enable_free_shipping_nudge', False)
+    
+    # 計算金額
+    cart_data = calculate_cart_totals(mock_cart['items'])
+    
+    nudge_message = None
+    diff = None
+    
+    # 計算差額並傳給前端
+    if cart_data['subtotal'] < 200:
+        diff = 200 - cart_data['subtotal']
+        # 只有當 Toggle 開啟時才顯示訊息
+        if enable_nudge:
+            nudge_message = f"再購買 ${diff} 即可免運費！"
+    
+    return render_template(
+        'cart.html',
+        cart=cart_data,
+        nudge_message=nudge_message,
+        diff=diff
+    )
+
+
 @app.route('/checkout-options')
 @monitor_request
 def checkout_options():
@@ -131,9 +161,11 @@ def checkout_options():
     結帳選項頁面路由
     (Checkout Options route)
     """
+    toggles = load_toggles()
+    
     # 重新計算金額
     cart_data = calculate_cart_totals(mock_cart['items'])
-    return render_template('checkout.html', cart=cart_data)
+    return render_template('checkout.html', cart=cart_data, toggles=toggles)
 
 
 @app.route('/')
