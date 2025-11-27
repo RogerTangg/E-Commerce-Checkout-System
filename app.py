@@ -6,13 +6,81 @@ Author: Professional Developer
 Date: 2025-11-23
 """
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 import json
 import os
 import time
 from datetime import datetime
+import psycopg2
 
 app = Flask(__name__)
+
+# Database Configuration
+DB_HOST = os.environ.get('DB_HOST', 'localhost')
+DB_NAME = os.environ.get('DB_NAME', 'ecommerce')
+DB_USER = os.environ.get('DB_USER', 'user')
+DB_PASSWORD = os.environ.get('DB_PASSWORD', 'password')
+
+# 儲存最近的日誌 (Store recent logs)
+recent_logs = []
+MAX_LOGS = 50
+
+def add_log(level, message):
+    """
+    新增日誌記錄 (Add log entry)
+    """
+    log_entry = {
+        "level": level,
+        "message": message,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    recent_logs.insert(0, log_entry)
+    if len(recent_logs) > MAX_LOGS:
+        recent_logs.pop()
+    print(f"[{level.upper()}] {message}")
+
+def check_db_connection():
+    """
+    檢查資料庫連線 (Check Database Connection)
+    Returns: True if connected, False otherwise
+    """
+    conn = None
+    try:
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            database=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            connect_timeout=2
+        )
+        return True
+    except Exception as e:
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def check_db_connection_or_raise():
+    """
+    檢查資料庫連線，若失敗則拋出例外 (Check DB connection, raise if failed)
+    """
+    conn = None
+    try:
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            database=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            connect_timeout=2
+        )
+        return True
+    except Exception as e:
+        add_log("error", f"Database connection failed: {e}")
+        metrics["error_requests"] += 1
+        raise e
+    finally:
+        if conn:
+            conn.close()
 
 # Mock 購物車資料 (Mock Cart Data)
 # 為了測試湊單功能，預設金額設為 170 (未滿 200)
@@ -143,6 +211,8 @@ def index():
     首頁路由 - 顯示購物車內容與湊單提示
     (Homepage route - Display cart contents and free shipping nudge)
     """
+    add_log("info", f"User accessed homepage - Total requests: {metrics['total_requests']}")
+    
     toggles = load_toggles()
     enable_nudge = toggles.get('enable_free_shipping_nudge', False)
     
@@ -170,6 +240,8 @@ def payment():
     """
     付款頁面路由
     """
+    add_log("info", "User accessed payment page")
+    
     toggles = load_toggles()
     enable_cod = toggles.get('enable_cod', False)
     
@@ -207,44 +279,37 @@ def success():
 @app.route('/logs')
 def get_logs():
     """
-    日誌 API 端點
-    (Logs API endpoint)
+    日誌 API 端點 - 返回真實日誌
+    (Logs API endpoint - Returns real logs)
     """
-    # 模擬一些日誌條目
-    logs = [
-        {
-            "level": "info",
-            "message": f"User accessed homepage - Total requests: {metrics['total_requests']}",
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        },
-        {
-            "level": "info", 
-            "message": f"Order created successfully - Order ID: ORD-{metrics['orders_created']:010d}",
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        },
-        {
-            "level": "warning",
-            "message": "High response time detected",
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        },
-        {
-            "level": "info",
-            "message": f"System uptime: {round(time.time() - metrics['uptime_start'], 0)} seconds",
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-    ]
+    # 如果沒有日誌，返回一些初始狀態
+    if len(recent_logs) == 0:
+        return jsonify([
+            {
+                "level": "info",
+                "message": f"System started - Uptime: {round(time.time() - metrics['uptime_start'], 0)} seconds",
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+        ])
     
-    return jsonify(logs)
+    return jsonify(recent_logs[:20])
 
 
 @app.route('/metrics')
 def get_metrics():
     """
-    監控指標 API 端點
-    (Monitoring metrics API endpoint)
+    監控指標 API 端點 - 包含資料庫健康檢查
+    (Monitoring metrics API endpoint - includes DB health check)
     """
     current_time = time.time()
     uptime = current_time - metrics["uptime_start"]
+    
+    # 實際檢查資料庫連線狀態
+    db_healthy = check_db_connection()
+    
+    # 如果資料庫斷線，記錄警報
+    if not db_healthy:
+        add_log("error", "ALERT: Database connection failed - Service Unavailable")
     
     # 計算平均響應時間
     avg_response_time = 0
@@ -256,6 +321,10 @@ def get_metrics():
     if metrics["total_requests"] > 0:
         error_rate = (metrics["error_requests"] / metrics["total_requests"]) * 100
     
+    # 如果資料庫斷線，錯誤率設為 100%
+    if not db_healthy:
+        error_rate = 100.0
+    
     # 計算吞吐量 (每分鐘請求數)
     throughput = 0
     if uptime > 0:
@@ -264,8 +333,15 @@ def get_metrics():
     # 計算平均購物車價值
     avg_cart_value = calculate_cart_totals(mock_cart['items'])['total']
     
+    # 系統健康度：基於資料庫狀態與錯誤率
+    if not db_healthy:
+        system_health = 0.0  # 資料庫斷線 = 健康度 0%
+    else:
+        system_health = max(0, 98.5 - (error_rate * 0.5))
+    
     return jsonify({
-        "system_health": 98.5 if uptime > 0 else 0,  # 簡單的健康檢查
+        "system_health": round(system_health, 1),
+        "db_status": "healthy" if db_healthy else "down",
         "avg_response_time": round(avg_response_time, 1),
         "error_rate": round(error_rate, 2),
         "throughput": round(throughput, 1),
@@ -275,14 +351,14 @@ def get_metrics():
         "uptime_seconds": round(uptime, 0),
         "last_request": datetime.fromtimestamp(metrics["last_request_time"]).strftime("%Y-%m-%d %H:%M:%S"),
         "error_budget": {
-            "monthly_remaining": max(0, 85 - (error_rate * 0.1)),  # 基於錯誤率計算
-            "quarterly_remaining": max(0, 92 - (error_rate * 0.05)),
-            "annual_remaining": max(0, 78 - (error_rate * 0.02))
+            "monthly_remaining": max(0, 85 - (error_rate * 1.0)),
+            "quarterly_remaining": max(0, 92 - (error_rate * 0.5)),
+            "annual_remaining": max(0, 78 - (error_rate * 0.2))
         },
         "slo_status": {
-            "availability": 99.9,
+            "availability": 0.0 if not db_healthy else 99.9,
             "latency_target": "<200ms",
-            "latency_actual": f"{avg_response_time}ms"
+            "latency_actual": f"{avg_response_time}ms" if db_healthy else "N/A"
         }
     })
 
@@ -290,55 +366,66 @@ def get_metrics():
 @app.route('/services')
 def get_services():
     """
-    服務架構狀態 API 端點
-    (Service architecture status API endpoint)
+    服務架構狀態 API 端點 - 包含真實資料庫狀態
+    (Service architecture status API endpoint - includes real DB status)
     """
-    # 模擬服務健康狀態，基於系統指標
     current_time = time.time()
     uptime = current_time - metrics["uptime_start"]
+    
+    # 實際檢查資料庫連線狀態
+    db_healthy = check_db_connection()
+    
     error_rate = 0
     if metrics["total_requests"] > 0:
         error_rate = (metrics["error_requests"] / metrics["total_requests"]) * 100
     
-    # 根據錯誤率和正常運行時間決定服務狀態
-    base_health = 98.5 if uptime > 0 else 0
-    health_variation = max(-10, min(5, -error_rate * 0.5))  # 錯誤率越高，健康度越低
+    # 如果資料庫斷線，影響所有依賴它的服務
+    if not db_healthy:
+        base_health = 0
+        db_status = "degraded"
+        dependent_status = "degraded"
+    else:
+        base_health = 98.5 if uptime > 0 else 0
+        db_status = "healthy"
+        dependent_status = "healthy"
+    
+    health_variation = max(-10, min(5, -error_rate * 0.5))
     
     services = {
         "load_balancer": {
             "name": "Load Balancer",
             "status": "healthy" if base_health + health_variation > 95 else "warning",
-            "health": round(base_health + health_variation, 1)
+            "health": round(max(0, base_health + health_variation), 1)
         },
         "api_gateway": {
             "name": "API Gateway", 
             "status": "healthy" if base_health + health_variation > 95 else "warning",
-            "health": round(base_health + health_variation, 1)
+            "health": round(max(0, base_health + health_variation), 1)
         },
         "user_service": {
             "name": "User Service",
-            "status": "healthy" if base_health + health_variation > 90 else "warning",
-            "health": round(base_health + health_variation - 5, 1)
+            "status": dependent_status if not db_healthy else ("healthy" if base_health + health_variation > 90 else "warning"),
+            "health": round(max(0, base_health + health_variation - 5), 1)
         },
         "order_service": {
             "name": "Order Service",
-            "status": "healthy" if base_health + health_variation > 90 else "warning", 
-            "health": round(base_health + health_variation - 5, 1)
+            "status": dependent_status if not db_healthy else ("healthy" if base_health + health_variation > 90 else "warning"), 
+            "health": round(max(0, base_health + health_variation - 5), 1)
         },
         "payment_service": {
             "name": "Payment Service",
-            "status": "healthy" if base_health + health_variation > 85 else "degraded",
-            "health": round(base_health + health_variation - 10, 1)
+            "status": dependent_status if not db_healthy else ("healthy" if base_health + health_variation > 85 else "degraded"),
+            "health": round(max(0, base_health + health_variation - 10), 1)
         },
         "database": {
             "name": "Database",
-            "status": "healthy" if base_health + health_variation > 95 else "warning",
-            "health": round(base_health + health_variation, 1)
+            "status": db_status,
+            "health": 98.5 if db_healthy else 0.0
         },
         "redis_cache": {
             "name": "Redis Cache",
             "status": "healthy" if base_health + health_variation > 90 else "warning",
-            "health": round(base_health + health_variation - 5, 1)
+            "health": round(max(0, base_health + health_variation - 5), 1)
         }
     }
     
@@ -352,6 +439,10 @@ def checkout():
     結帳路由
     """
     try:
+        # 檢查資料庫連線 (Check DB connection)
+        check_db_connection_or_raise()
+        add_log("info", "Database connection successful for checkout")
+
         toggles = load_toggles()
         enable_cod = toggles.get('enable_cod', False)
         
@@ -392,14 +483,19 @@ def checkout():
         metrics["orders_created"] += 1
         metrics["total_sales"] += cart_data["total"]
         
+        order_id = f"ORD-{datetime.now().strftime('%Y%m%d')}{metrics['orders_created']:05d}"
+        
         order_data = {
-            "order_id": "ORD-2025112300001",
+            "order_id": order_id,
             "total": cart_data["total"],
             "payment_method": payment_display,
             "delivery_method": delivery_method,
             "invoice_type": invoice_type,
             "status": "已成立"
         }
+        
+        # 記錄成功日誌
+        add_log("success", f"Order created successfully - Order ID: {order_id}, Total: ${cart_data['total']}, Payment: {payment_display}")
         
         return jsonify({
             "status": "success",
@@ -408,6 +504,7 @@ def checkout():
         })
         
     except Exception as e:
+        add_log("error", f"Checkout failed: {str(e)}")
         return jsonify({
             "status": "error",
             "message": f"系統錯誤: {str(e)}"
@@ -424,6 +521,14 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
     return response
+
+
+@app.route('/dashboard/<path:filename>')
+def serve_dashboard(filename):
+    """
+    Serve dashboard files
+    """
+    return send_from_directory('dashboard', filename)
 
 
 if __name__ == '__main__':
