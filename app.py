@@ -80,29 +80,6 @@ def monitor_request(f):
     return wrapper
 
 
-def monitor_request(f):
-    """
-    裝飾器：監控請求指標
-    (Decorator: Monitor request metrics)
-    """
-    def wrapper(*args, **kwargs):
-        start_time = time.time()
-        metrics["total_requests"] += 1
-        metrics["last_request_time"] = start_time
-        
-        try:
-            result = f(*args, **kwargs)
-            response_time = time.time() - start_time
-            metrics["total_response_time"] += response_time
-            return result
-        except Exception as e:
-            metrics["error_requests"] += 1
-            raise e
-    
-    wrapper.__name__ = f.__name__
-    return wrapper
-
-
 def calculate_cart_totals(cart_items):
     """
     計算購物車總金額與運費
@@ -242,29 +219,80 @@ def get_logs():
     日誌 API 端點
     (Logs API endpoint)
     """
-    # 模擬一些日誌條目
-    logs = [
-        {
+    current_time = time.time()
+    uptime = current_time - metrics["uptime_start"]
+    
+    # 計算平均響應時間
+    avg_response_time = 0
+    if metrics["total_requests"] > 0:
+        avg_response_time = (metrics["total_response_time"] / metrics["total_requests"]) * 1000
+    
+    # 計算錯誤率
+    error_rate = 0
+    if metrics["total_requests"] > 0:
+        error_rate = (metrics["error_requests"] / metrics["total_requests"]) * 100
+    
+    # 根據實際數據生成動態日誌
+    logs = []
+    
+    # 系統啟動日誌
+    logs.append({
+        "level": "success",
+        "message": f"System started successfully - Uptime: {int(uptime)} seconds",
+        "timestamp": datetime.fromtimestamp(metrics['uptime_start']).strftime("%Y-%m-%d %H:%M:%S")
+    })
+    
+    # 請求統計日誌
+    if metrics['total_requests'] > 0:
+        logs.append({
             "level": "info",
-            "message": f"User accessed homepage - Total requests: {metrics['total_requests']}",
+            "message": f"Total requests processed: {metrics['total_requests']} | Avg response time: {avg_response_time:.1f}ms",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        },
-        {
-            "level": "info", 
-            "message": f"Order created successfully - Order ID: ORD-{metrics['orders_created']:010d}",
+        })
+    
+    # 訂單相關日誌
+    if metrics['orders_created'] > 0:
+        logs.append({
+            "level": "success",
+            "message": f"Orders created: {metrics['orders_created']} | Total sales: ${metrics['total_sales']}",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        },
-        {
+        })
+    
+    # 錯誤率相關日誌
+    if error_rate > 5:
+        logs.append({
+            "level": "error",
+            "message": f"High error rate detected: {error_rate:.2f}% - Immediate attention required!",
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+    elif error_rate > 1:
+        logs.append({
             "level": "warning",
-            "message": "High response time detected",
+            "message": f"Elevated error rate: {error_rate:.2f}% - Monitoring recommended",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        },
-        {
+        })
+    else:
+        logs.append({
             "level": "info",
-            "message": f"System uptime: {round(time.time() - metrics['uptime_start'], 0)} seconds",
+            "message": f"Error rate within normal range: {error_rate:.2f}%",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-    ]
+        })
+    
+    # 響應時間相關日誌
+    if avg_response_time > 500:
+        logs.append({
+            "level": "warning",
+            "message": f"High response time detected: {avg_response_time:.1f}ms exceeds 500ms threshold",
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+    
+    # 最後請求時間日誌
+    if metrics['last_request_time'] != metrics['uptime_start']:
+        logs.append({
+            "level": "info",
+            "message": f"Last request received at: {datetime.fromtimestamp(metrics['last_request_time']).strftime('%H:%M:%S')}",
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
     
     return jsonify(logs)
 
@@ -296,8 +324,26 @@ def get_metrics():
     # 計算平均購物車價值
     avg_cart_value = calculate_cart_totals(mock_cart['items'])['total']
     
+    # 動態計算系統健康度 (基於錯誤率和響應時間)
+    # 基礎健康度 100%，錯誤率每 1% 扣 5 分，響應時間超過 200ms 每 100ms 扣 2 分
+    system_health = 100.0
+    system_health -= error_rate * 5  # 錯誤率影響
+    if avg_response_time > 200:
+        system_health -= ((avg_response_time - 200) / 100) * 2  # 響應時間影響
+    system_health = max(0, min(100, system_health))  # 限制在 0-100 範圍
+    
+    # 動態計算可用性 (基於錯誤率)
+    availability = max(0, 100 - error_rate)
+    
+    # Error Budget 計算 (基於 SLO 目標 99.9%)
+    # 每月允許 0.1% 的錯誤時間 = 43.2 分鐘
+    # 計算已使用的 budget 百分比
+    monthly_budget_used = min(100, error_rate * 10)  # 錯誤率的 10 倍作為已使用 budget
+    quarterly_budget_used = min(100, error_rate * 5)
+    annual_budget_used = min(100, error_rate * 2)
+    
     return jsonify({
-        "system_health": 98.5 if uptime > 0 else 0,  # 簡單的健康檢查
+        "system_health": round(system_health, 1),
         "avg_response_time": round(avg_response_time, 1),
         "error_rate": round(error_rate, 2),
         "throughput": round(throughput, 1),
@@ -305,16 +351,19 @@ def get_metrics():
         "total_sales": metrics["total_sales"],
         "avg_cart_value": avg_cart_value,
         "uptime_seconds": round(uptime, 0),
+        "total_requests": metrics["total_requests"],
+        "error_requests": metrics["error_requests"],
         "last_request": datetime.fromtimestamp(metrics["last_request_time"]).strftime("%Y-%m-%d %H:%M:%S"),
         "error_budget": {
-            "monthly_remaining": max(0, 85 - (error_rate * 0.1)),  # 基於錯誤率計算
-            "quarterly_remaining": max(0, 92 - (error_rate * 0.05)),
-            "annual_remaining": max(0, 78 - (error_rate * 0.02))
+            "monthly_remaining": round(max(0, 100 - monthly_budget_used), 1),
+            "quarterly_remaining": round(max(0, 100 - quarterly_budget_used), 1),
+            "annual_remaining": round(max(0, 100 - annual_budget_used), 1)
         },
         "slo_status": {
-            "availability": 99.9,
+            "availability": round(availability, 2),
             "latency_target": "<200ms",
-            "latency_actual": f"{avg_response_time}ms"
+            "latency_actual": f"{round(avg_response_time, 1)}ms",
+            "latency_status": "healthy" if avg_response_time < 200 else ("warning" if avg_response_time < 500 else "critical")
         }
     })
 
@@ -324,53 +373,91 @@ def get_services():
     """
     服務架構狀態 API 端點
     (Service architecture status API endpoint)
+    
+    服務 ID 對應 Dashboard SVG 元素:
+    - load-balancer -> #load-balancer-rect
+    - api-gateway -> #api-gateway-rect  
+    - user-service -> #user-service-rect
+    - order-service -> #order-service-rect
+    - payment-service -> #payment-service-rect
+    - database -> #database-rect
+    - redis-cache -> #redis-cache-rect
     """
-    # 模擬服務健康狀態，基於系統指標
     current_time = time.time()
     uptime = current_time - metrics["uptime_start"]
+    
+    # 計算錯誤率
     error_rate = 0
     if metrics["total_requests"] > 0:
         error_rate = (metrics["error_requests"] / metrics["total_requests"]) * 100
     
-    # 根據錯誤率和正常運行時間決定服務狀態
-    base_health = 98.5 if uptime > 0 else 0
-    health_variation = max(-10, min(5, -error_rate * 0.5))  # 錯誤率越高，健康度越低
+    # 計算平均響應時間
+    avg_response_time = 0
+    if metrics["total_requests"] > 0:
+        avg_response_time = (metrics["total_response_time"] / metrics["total_requests"]) * 1000
     
+    # 基礎健康度計算
+    base_health = 100.0
+    base_health -= error_rate * 2  # 錯誤率影響
+    if avg_response_time > 200:
+        base_health -= ((avg_response_time - 200) / 100) * 1
+    base_health = max(0, min(100, base_health))
+    
+    def get_status(health):
+        """根據健康度返回狀態"""
+        if health >= 95:
+            return "healthy"
+        elif health >= 80:
+            return "warning"
+        else:
+            return "degraded"
+    
+    # 使用 kebab-case 的 key 以匹配 Dashboard 的 SVG 元素 ID
     services = {
-        "load_balancer": {
+        "load-balancer": {
             "name": "Load Balancer",
-            "status": "healthy" if base_health + health_variation > 95 else "warning",
-            "health": round(base_health + health_variation, 1)
+            "health": round(base_health, 1),
+            "status": get_status(base_health),
+            "requests_handled": metrics["total_requests"]
         },
-        "api_gateway": {
+        "api-gateway": {
             "name": "API Gateway", 
-            "status": "healthy" if base_health + health_variation > 95 else "warning",
-            "health": round(base_health + health_variation, 1)
+            "health": round(base_health - 1, 1),
+            "status": get_status(base_health - 1),
+            "avg_latency": round(avg_response_time * 0.3, 1)  # Gateway 處理約 30% 的延遲
         },
-        "user_service": {
+        "user-service": {
             "name": "User Service",
-            "status": "healthy" if base_health + health_variation > 90 else "warning",
-            "health": round(base_health + health_variation - 5, 1)
+            "health": round(base_health - 2, 1),
+            "status": get_status(base_health - 2),
+            "active_sessions": max(1, metrics["total_requests"] // 3)
         },
-        "order_service": {
+        "order-service": {
             "name": "Order Service",
-            "status": "healthy" if base_health + health_variation > 90 else "warning", 
-            "health": round(base_health + health_variation - 5, 1)
+            "health": round(base_health - 3, 1),
+            "status": get_status(base_health - 3),
+            "orders_processed": metrics["orders_created"]
         },
-        "payment_service": {
+        "payment-service": {
             "name": "Payment Service",
-            "status": "healthy" if base_health + health_variation > 85 else "degraded",
-            "health": round(base_health + health_variation - 10, 1)
+            "health": round(base_health - 4, 1),
+            "status": get_status(base_health - 4),
+            "transactions": metrics["orders_created"],
+            "total_amount": metrics["total_sales"]
         },
         "database": {
             "name": "Database",
-            "status": "healthy" if base_health + health_variation > 95 else "warning",
-            "health": round(base_health + health_variation, 1)
+            "health": round(base_health - 1, 1),
+            "status": get_status(base_health - 1),
+            "connections": min(100, max(1, metrics["total_requests"] // 2)),
+            "query_time": round(avg_response_time * 0.4, 1)  # DB 處理約 40% 的延遲
         },
-        "redis_cache": {
+        "redis-cache": {
             "name": "Redis Cache",
-            "status": "healthy" if base_health + health_variation > 90 else "warning",
-            "health": round(base_health + health_variation - 5, 1)
+            "health": round(base_health, 1),
+            "status": get_status(base_health),
+            "hit_rate": 95.5,
+            "memory_usage": "256MB"
         }
     }
     

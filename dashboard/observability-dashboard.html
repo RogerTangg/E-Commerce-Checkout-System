@@ -326,13 +326,23 @@
     </div>
 
     <script>
+        // API Base URL - 便於切換環境
+        const API_BASE_URL = 'http://localhost:5000';
+        
+        // 歷史數據存儲 (用於圖表)
+        const historyData = {
+            responseTime: [],
+            errorRate: [],
+            maxDataPoints: 7
+        };
+
         // Performance Chart
         const performanceOptions = {
             series: [{
-                name: 'Response Time',
+                name: 'Response Time (ms)',
                 data: []
             }, {
-                name: 'Error Rate',
+                name: 'Error Rate (%)',
                 data: []
             }],
             chart: {
@@ -340,6 +350,11 @@
                 height: 250,
                 toolbar: {
                     show: false
+                },
+                animations: {
+                    enabled: true,
+                    easing: 'easeinout',
+                    speed: 800
                 }
             },
             colors: ['#3B82F6', '#EF4444'],
@@ -348,33 +363,62 @@
                 width: 3
             },
             xaxis: {
-                categories: ['-6h', '-5h', '-4h', '-3h', '-2h', '-1h', 'Now']
+                categories: ['-6m', '-5m', '-4m', '-3m', '-2m', '-1m', 'Now']
             },
             yaxis: [{
                 title: {
                     text: 'Response Time (ms)'
-                }
+                },
+                min: 0
             }, {
                 opposite: true,
                 title: {
                     text: 'Error Rate (%)'
-                }
+                },
+                min: 0,
+                max: 100
             }],
             legend: {
                 position: 'top'
             },
+            tooltip: {
+                shared: true,
+                intersect: false
+            },
             noData: {
-                text: 'Loading performance data...'
+                text: 'Waiting for data...'
             }
         };
 
         const performanceChart = new ApexCharts(document.querySelector("#performanceChart"), performanceOptions);
         performanceChart.render();
 
+        // 輔助函數：更新進度條顏色
+        function updateBarColor(barElement, value, thresholds) {
+            const { warning, critical } = thresholds;
+            let color;
+            if (value >= critical) {
+                color = '#EF4444'; // red
+            } else if (value >= warning) {
+                color = '#F59E0B'; // yellow
+            } else {
+                color = '#10B981'; // green
+            }
+            barElement.style.backgroundColor = color;
+        }
+
+        // 輔助函數：格式化運行時間
+        function formatUptime(seconds) {
+            if (seconds < 60) return `${Math.round(seconds)}s`;
+            if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+            return `${Math.round(seconds / 3600)}h ${Math.round((seconds % 3600) / 60)}m`;
+        }
+
         // Function to fetch and update services status
         async function updateServices() {
             try {
-                const response = await fetch('http://localhost:5000/services');
+                const response = await fetch(`${API_BASE_URL}/services`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const services = await response.json();
                 
                 // Define colors for different statuses
@@ -385,6 +429,8 @@
                 };
                 
                 // Update each service rectangle color
+                // API 回傳的 key 使用 kebab-case (如 load-balancer)
+                // SVG 元素 ID 格式為 key + '-rect' (如 load-balancer-rect)
                 Object.keys(services).forEach(serviceKey => {
                     const service = services[serviceKey];
                     const rectId = serviceKey + '-rect';
@@ -404,91 +450,177 @@
         // Function to fetch and update metrics
         async function updateMetrics() {
             try {
-                const response = await fetch('http://localhost:5000/metrics');
+                const response = await fetch(`${API_BASE_URL}/metrics`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
                 
-                // Update system health
-                document.getElementById('system-health').textContent = data.system_health + '%';
-                document.getElementById('system-health-bar').style.width = data.system_health + '%';
+                // === System Health ===
+                const healthEl = document.getElementById('system-health');
+                const healthBar = document.getElementById('system-health-bar');
+                const healthChange = document.getElementById('system-health-change');
                 
-                // Update response time
-                document.getElementById('avg-response-time').textContent = data.avg_response_time + 'ms';
-                const responseTimePercent = Math.min(data.avg_response_time / 10, 100); // Scale for bar
-                document.getElementById('response-time-bar').style.width = responseTimePercent + '%';
+                healthEl.textContent = data.system_health + '%';
+                healthBar.style.width = data.system_health + '%';
+                updateBarColor(healthBar, 100 - data.system_health, { warning: 10, critical: 20 });
                 
-                // Update error rate
-                document.getElementById('error-rate').textContent = data.error_rate + '%';
-                document.getElementById('error-rate-bar').style.width = data.error_rate + '%';
+                // 顯示狀態指示
+                if (data.system_health >= 95) {
+                    healthChange.textContent = '✓ Healthy';
+                    healthChange.style.color = '#059669';
+                } else if (data.system_health >= 80) {
+                    healthChange.textContent = '⚠ Warning';
+                    healthChange.style.color = '#D97706';
+                } else {
+                    healthChange.textContent = '✗ Critical';
+                    healthChange.style.color = '#DC2626';
+                }
                 
-                // Update throughput
-                document.getElementById('throughput').textContent = data.throughput.toFixed(1) + '/min';
-                const throughputPercent = Math.min(data.throughput / 10, 100); // Scale for bar
-                document.getElementById('throughput-bar').style.width = throughputPercent + '%';
+                // === Response Time ===
+                const rtEl = document.getElementById('avg-response-time');
+                const rtBar = document.getElementById('response-time-bar');
+                const rtChange = document.getElementById('response-time-change');
                 
-                // Update performance chart with real data
-                // Generate realistic trend data based on current system health
-                const baseResponseTime = data.avg_response_time;
-                const baseErrorRate = data.error_rate;
+                rtEl.textContent = data.avg_response_time + 'ms';
+                // 響應時間進度條：以 500ms 為 100%
+                const rtPercent = Math.min((data.avg_response_time / 500) * 100, 100);
+                rtBar.style.width = rtPercent + '%';
+                updateBarColor(rtBar, data.avg_response_time, { warning: 200, critical: 500 });
                 
-                // Create trend data with some realistic variation
-                const responseTimeTrend = [];
-                const errorRateTrend = [];
+                // 顯示與目標的比較
+                if (data.avg_response_time < 200) {
+                    rtChange.textContent = '< 200ms ✓';
+                    rtChange.style.color = '#059669';
+                } else {
+                    rtChange.textContent = '> 200ms ⚠';
+                    rtChange.style.color = '#D97706';
+                }
                 
-                // Generate 7 data points (last 6 hours + current)
-                for (let i = 6; i >= 0; i--) {
-                    // Add some realistic variation based on system health
-                    const variation = (100 - data.system_health) / 100; // Higher variation when health is lower
-                    const rtVariation = (Math.random() - 0.5) * baseResponseTime * variation * 0.3;
-                    const erVariation = (Math.random() - 0.5) * baseErrorRate * variation * 2;
-                    
-                    responseTimeTrend.push(Math.max(0, baseResponseTime + rtVariation));
-                    errorRateTrend.push(Math.max(0, baseErrorRate + erVariation));
+                // === Error Rate ===
+                const erEl = document.getElementById('error-rate');
+                const erBar = document.getElementById('error-rate-bar');
+                const erChange = document.getElementById('error-rate-change');
+                
+                erEl.textContent = data.error_rate + '%';
+                // 錯誤率進度條：以 10% 為 100%
+                const erPercent = Math.min((data.error_rate / 10) * 100, 100);
+                erBar.style.width = erPercent + '%';
+                updateBarColor(erBar, data.error_rate, { warning: 1, critical: 5 });
+                
+                erChange.textContent = data.error_requests + ' errors';
+                erChange.style.color = data.error_rate > 1 ? '#D97706' : '#059669';
+                
+                // === Throughput ===
+                const tpEl = document.getElementById('throughput');
+                const tpBar = document.getElementById('throughput-bar');
+                const tpChange = document.getElementById('throughput-change');
+                
+                tpEl.textContent = data.throughput.toFixed(1) + ' req/min';
+                // 吞吐量進度條：以 100 req/min 為 100%
+                const tpPercent = Math.min((data.throughput / 100) * 100, 100);
+                tpBar.style.width = tpPercent + '%';
+                tpBar.style.backgroundColor = '#A855F7'; // purple
+                
+                tpChange.textContent = `${data.total_requests} total`;
+                tpChange.style.color = '#9333EA';
+                
+                // === 更新歷史數據和圖表 ===
+                historyData.responseTime.push(data.avg_response_time);
+                historyData.errorRate.push(data.error_rate);
+                
+                // 保持最多 maxDataPoints 個數據點
+                if (historyData.responseTime.length > historyData.maxDataPoints) {
+                    historyData.responseTime.shift();
+                    historyData.errorRate.shift();
+                }
+                
+                // 填充不足的數據點
+                while (historyData.responseTime.length < historyData.maxDataPoints) {
+                    historyData.responseTime.unshift(data.avg_response_time);
+                    historyData.errorRate.unshift(data.error_rate);
                 }
                 
                 performanceChart.updateSeries([{
-                    name: 'Response Time',
-                    data: responseTimeTrend
+                    name: 'Response Time (ms)',
+                    data: historyData.responseTime.map(v => parseFloat(v.toFixed(1)))
                 }, {
-                    name: 'Error Rate',
-                    data: errorRateTrend
+                    name: 'Error Rate (%)',
+                    data: historyData.errorRate.map(v => parseFloat(v.toFixed(2)))
                 }]);
                 
-                // Update error budget
+                // === Error Budget ===
                 if (data.error_budget) {
-                    document.getElementById('monthly-budget').textContent = Math.round(data.error_budget.monthly_remaining) + '% remaining';
-                    document.getElementById('monthly-budget-bar').style.width = data.error_budget.monthly_remaining + '%';
+                    const monthlyBudget = data.error_budget.monthly_remaining;
+                    const quarterlyBudget = data.error_budget.quarterly_remaining;
+                    const annualBudget = data.error_budget.annual_remaining;
                     
-                    document.getElementById('quarterly-budget').textContent = Math.round(data.error_budget.quarterly_remaining) + '% remaining';
-                    document.getElementById('quarterly-budget-bar').style.width = data.error_budget.quarterly_remaining + '%';
+                    document.getElementById('monthly-budget').textContent = monthlyBudget + '% remaining';
+                    const monthlyBar = document.getElementById('monthly-budget-bar');
+                    monthlyBar.style.width = monthlyBudget + '%';
+                    updateBarColor(monthlyBar, 100 - monthlyBudget, { warning: 50, critical: 80 });
                     
-                    document.getElementById('annual-budget').textContent = Math.round(data.error_budget.annual_remaining) + '% remaining';
-                    document.getElementById('annual-budget-bar').style.width = data.error_budget.annual_remaining + '%';
+                    document.getElementById('quarterly-budget').textContent = quarterlyBudget + '% remaining';
+                    const quarterlyBar = document.getElementById('quarterly-budget-bar');
+                    quarterlyBar.style.width = quarterlyBudget + '%';
+                    updateBarColor(quarterlyBar, 100 - quarterlyBudget, { warning: 50, critical: 80 });
+                    
+                    document.getElementById('annual-budget').textContent = annualBudget + '% remaining';
+                    const annualBar = document.getElementById('annual-budget-bar');
+                    annualBar.style.width = annualBudget + '%';
+                    updateBarColor(annualBar, 100 - annualBudget, { warning: 50, critical: 80 });
                 }
                 
-                // Update SLO status
+                // === SLO Status ===
                 if (data.slo_status) {
-                    document.getElementById('availability').textContent = data.slo_status.availability + '%';
-                    document.getElementById('latency').textContent = data.slo_status.latency_actual;
+                    const availEl = document.getElementById('availability');
+                    const latencyEl = document.getElementById('latency');
+                    
+                    availEl.textContent = data.slo_status.availability + '%';
+                    // 根據可用性設置顏色
+                    if (data.slo_status.availability >= 99.9) {
+                        availEl.style.color = '#059669'; // green
+                    } else if (data.slo_status.availability >= 99) {
+                        availEl.style.color = '#D97706'; // yellow
+                    } else {
+                        availEl.style.color = '#DC2626'; // red
+                    }
+                    
+                    latencyEl.textContent = data.slo_status.latency_actual;
+                    // 根據延遲狀態設置顏色
+                    if (data.slo_status.latency_status === 'healthy') {
+                        latencyEl.style.color = '#2563EB'; // blue
+                    } else if (data.slo_status.latency_status === 'warning') {
+                        latencyEl.style.color = '#D97706'; // yellow
+                    } else {
+                        latencyEl.style.color = '#DC2626'; // red
+                    }
                 }
                 
             } catch (error) {
                 console.error('Error fetching metrics:', error);
-                // Fallback to default values if API is not available
+                // Fallback to error state
                 document.getElementById('system-health').textContent = 'N/A';
                 document.getElementById('avg-response-time').textContent = 'N/A';
                 document.getElementById('error-rate').textContent = 'N/A';
                 document.getElementById('throughput').textContent = 'N/A';
+                document.getElementById('system-health-change').textContent = 'API Error';
+                document.getElementById('system-health-change').style.color = '#DC2626';
             }
         }
 
         // Function to fetch and update logs
         async function updateLogs() {
             try {
-                const response = await fetch('http://localhost:5000/logs');
+                const response = await fetch(`${API_BASE_URL}/logs`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const logs = await response.json();
                 
                 const logsContainer = document.getElementById('logs-container');
                 logsContainer.innerHTML = '';
+                
+                if (logs.length === 0) {
+                    logsContainer.innerHTML = '<div class="text-center text-slate-500">No logs available</div>';
+                    return;
+                }
                 
                 logs.forEach(log => {
                     const logElement = createLogElement(log);
@@ -498,48 +630,76 @@
             } catch (error) {
                 console.error('Error fetching logs:', error);
                 const logsContainer = document.getElementById('logs-container');
-                logsContainer.innerHTML = '<div class="text-center text-red-500">Error loading logs</div>';
+                logsContainer.innerHTML = '<div class="text-center text-red-500">⚠ Cannot connect to API server</div>';
             }
         }
 
         // Function to create log element
         function createLogElement(log) {
             const colors = {
-                error: { bg: 'bg-red-50 dark:bg-red-900/20', border: 'border-red-200 dark:border-red-800', text: 'text-red-800 dark:text-red-200', icon: 'text-red-500' },
-                warning: { bg: 'bg-yellow-50 dark:bg-yellow-900/20', border: 'border-yellow-200 dark:border-yellow-800', text: 'text-yellow-800 dark:text-yellow-200', icon: 'text-yellow-500' },
-                info: { bg: 'bg-blue-50 dark:bg-blue-900/20', border: 'border-blue-200 dark:border-blue-800', text: 'text-blue-800 dark:text-blue-200', icon: 'text-blue-500' },
-                success: { bg: 'bg-green-50 dark:bg-green-900/20', border: 'border-green-200 dark:border-green-800', text: 'text-green-800 dark:text-green-200', icon: 'text-green-500' }
+                error: { 
+                    bg: 'background-color: #FEF2F2;', 
+                    border: 'border: 1px solid #FECACA;', 
+                    text: 'color: #991B1B;',
+                    icon: '❌'
+                },
+                warning: { 
+                    bg: 'background-color: #FFFBEB;', 
+                    border: 'border: 1px solid #FDE68A;', 
+                    text: 'color: #92400E;',
+                    icon: '⚠️'
+                },
+                info: { 
+                    bg: 'background-color: #EFF6FF;', 
+                    border: 'border: 1px solid #BFDBFE;', 
+                    text: 'color: #1E40AF;',
+                    icon: 'ℹ️'
+                },
+                success: { 
+                    bg: 'background-color: #F0FDF4;', 
+                    border: 'border: 1px solid #BBF7D0;', 
+                    text: 'color: #166534;',
+                    icon: '✅'
+                }
             };
             
             const colorScheme = colors[log.level] || colors.info;
             
             const div = document.createElement('div');
-            div.className = `flex items-start space-x-3 p-3 ${colorScheme.bg} rounded-lg border ${colorScheme.border}`;
+            div.style.cssText = `
+                display: flex;
+                align-items: flex-start;
+                padding: 12px;
+                border-radius: 8px;
+                margin-bottom: 8px;
+                ${colorScheme.bg}
+                ${colorScheme.border}
+            `;
             
             div.innerHTML = `
-                <div class="flex-shrink-0">
-                    <svg class="size-5 ${colorScheme.icon}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+                <div style="flex-shrink: 0; margin-right: 12px; font-size: 16px;">
+                    ${colorScheme.icon}
                 </div>
-                <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium ${colorScheme.text}">${log.message}</p>
-                    <p class="text-xs ${colorScheme.text.replace('800', '600').replace('200', '300')} mt-1">${log.timestamp}</p>
+                <div style="flex: 1; min-width: 0;">
+                    <p style="font-size: 14px; font-weight: 500; margin: 0; ${colorScheme.text}">${log.message}</p>
+                    <p style="font-size: 12px; margin: 4px 0 0 0; opacity: 0.7; ${colorScheme.text}">${log.timestamp}</p>
                 </div>
             `;
             
             return div;
         }
 
-        // Update metrics on page load and every 30 seconds
+        // Update metrics on page load and every 10 seconds
         updateMetrics();
         updateServices();
         updateLogs();
+        
+        // 更頻繁地更新以獲得更好的即時體驗
         setInterval(() => {
             updateMetrics();
             updateServices();
             updateLogs();
-        }, 30000);
+        }, 10000);
     </script>
 </body>
 </html>
