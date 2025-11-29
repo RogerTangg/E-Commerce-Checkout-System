@@ -4,10 +4,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Observability Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="css/app.css">
-    <link rel="stylesheet" href="css/fontawesome-all.css">
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        /* 確保圖表容器有明確高度 */
+        #performanceChart {
+            min-height: 250px;
+            height: 250px;
+        }
+        /* 自定義深色模式顏色 */
+        .dark .bg-navy-800 { background-color: #1e293b; }
+        .dark .bg-navy-900 { background-color: #0f172a; }
+        .dark .text-navy-100 { color: #f1f5f9; }
+        .dark .text-navy-200 { color: #e2e8f0; }
+        .dark .border-navy-700 { border-color: #334155; }
+    </style>
 </head>
 <body class="bg-slate-50 dark:bg-navy-900 font-inter antialiased">
     <div id="root" class="min-h-screen">
@@ -333,7 +347,7 @@
         const historyData = {
             responseTime: [],
             errorRate: [],
-            maxDataPoints: 7
+            maxDataPoints: 10  // 增加數據點數量
         };
 
         // Performance Chart
@@ -354,7 +368,7 @@
                 animations: {
                     enabled: true,
                     easing: 'easeinout',
-                    speed: 800
+                    speed: 500
                 }
             },
             colors: ['#3B82F6', '#EF4444'],
@@ -363,13 +377,17 @@
                 width: 3
             },
             xaxis: {
-                categories: ['-6m', '-5m', '-4m', '-3m', '-2m', '-1m', 'Now']
+                categories: ['', '', '', '', '', '', '', '', '', 'Now'],
+                labels: {
+                    show: true
+                }
             },
             yaxis: [{
                 title: {
                     text: 'Response Time (ms)'
                 },
-                min: 0
+                min: 0,
+                max: function(max) { return Math.max(max * 1.2, 10); }  // 動態最大值
             }, {
                 opposite: true,
                 title: {
@@ -523,30 +541,6 @@
                 tpChange.textContent = `${data.total_requests} total`;
                 tpChange.style.color = '#9333EA';
                 
-                // === 更新歷史數據和圖表 ===
-                historyData.responseTime.push(data.avg_response_time);
-                historyData.errorRate.push(data.error_rate);
-                
-                // 保持最多 maxDataPoints 個數據點
-                if (historyData.responseTime.length > historyData.maxDataPoints) {
-                    historyData.responseTime.shift();
-                    historyData.errorRate.shift();
-                }
-                
-                // 填充不足的數據點
-                while (historyData.responseTime.length < historyData.maxDataPoints) {
-                    historyData.responseTime.unshift(data.avg_response_time);
-                    historyData.errorRate.unshift(data.error_rate);
-                }
-                
-                performanceChart.updateSeries([{
-                    name: 'Response Time (ms)',
-                    data: historyData.responseTime.map(v => parseFloat(v.toFixed(1)))
-                }, {
-                    name: 'Error Rate (%)',
-                    data: historyData.errorRate.map(v => parseFloat(v.toFixed(2)))
-                }]);
-                
                 // === Error Budget ===
                 if (data.error_budget) {
                     const monthlyBudget = data.error_budget.monthly_remaining;
@@ -689,17 +683,55 @@
             return div;
         }
 
-        // Update metrics on page load and every 10 seconds
+        // 獨立的圖表更新函數 - 使用後端的真實歷史數據
+        async function updateChart() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/chart-data`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                
+                if (data.response_times && data.response_times.length > 0) {
+                    // 計算每個點的錯誤率（使用滑動窗口）
+                    const errorRates = data.error_flags.map((isError, index) => {
+                        // 計算到當前點為止的錯誤率
+                        const windowStart = Math.max(0, index - 4);
+                        const window = data.error_flags.slice(windowStart, index + 1);
+                        const errors = window.filter(e => e).length;
+                        return (errors / window.length) * 100;
+                    });
+                    
+                    performanceChart.updateOptions({
+                        xaxis: {
+                            categories: data.timestamps
+                        }
+                    });
+                    
+                    performanceChart.updateSeries([{
+                        name: 'Response Time (ms)',
+                        data: data.response_times.map(v => parseFloat(v.toFixed(2)))
+                    }, {
+                        name: 'Error Rate (%)',
+                        data: errorRates.map(v => parseFloat(v.toFixed(1)))
+                    }]);
+                }
+            } catch (error) {
+                console.error('Error updating chart:', error);
+            }
+        }
+
+        // Update metrics on page load and every 5 seconds
         updateMetrics();
         updateServices();
         updateLogs();
+        updateChart();
         
         // 更頻繁地更新以獲得更好的即時體驗
         setInterval(() => {
             updateMetrics();
             updateServices();
             updateLogs();
-        }, 10000);
+            updateChart();
+        }, 5000);
     </script>
 </body>
 </html>

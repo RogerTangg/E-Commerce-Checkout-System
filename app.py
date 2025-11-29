@@ -6,13 +6,25 @@ Author: Professional Developer
 Date: 2025-11-23
 """
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 import json
 import os
 import time
 from datetime import datetime
 
 app = Flask(__name__)
+
+
+# ===== Dashboard 靜態文件路由 =====
+@app.route('/dashboard/')
+@app.route('/dashboard/<path:filename>')
+def serve_dashboard(filename='observability-dashboard.html'):
+    """
+    提供 dashboard 資料夾中的靜態文件
+    (Serve static files from the dashboard folder)
+    """
+    dashboard_dir = os.path.join(app.root_path, 'dashboard')
+    return send_from_directory(dashboard_dir, filename)
 
 # Mock 購物車資料 (Mock Cart Data)
 # 為了測試湊單功能，預設金額設為 170 (未滿 200)
@@ -33,6 +45,45 @@ metrics = {
     "last_request_time": time.time(),
     "uptime_start": time.time()
 }
+
+# 響應時間歷史記錄 (Response Time History) - 用於圖表
+response_time_history = []
+MAX_HISTORY_POINTS = 20
+
+# 故障模擬狀態 (Fault Injection State)
+fault_state = {
+    "database_down": False,
+    "high_latency": False,
+    "latency_ms": 0
+}
+
+# 日誌歷史記錄 (Log History) - 保留最近 100 條
+log_history = []
+
+
+def add_log(level, message, category="system"):
+    """
+    新增日誌記錄到歷史
+    (Add log entry to history)
+    
+    Args:
+        level: 日誌等級 (info, success, warning, error)
+        message: 日誌訊息
+        category: 日誌類別 (system, order, error, security)
+    """
+    global log_history
+    log_entry = {
+        "level": level,
+        "message": message,
+        "category": category,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    log_history.append(log_entry)
+    # 只保留最近 100 條
+    if len(log_history) > 100:
+        log_history = log_history[-100:]
+    # 同時輸出到控制台
+    print(f"[{log_entry['timestamp']}] [{level.upper()}] [{category}] {message}")
 
 
 def load_toggles():
@@ -59,21 +110,56 @@ def load_toggles():
 
 def monitor_request(f):
     """
-    裝飾器：監控請求指標
-    (Decorator: Monitor request metrics)
+    裝飾器：監控請求指標，支援故障注入
+    (Decorator: Monitor request metrics with fault injection support)
     """
     def wrapper(*args, **kwargs):
         start_time = time.time()
         metrics["total_requests"] += 1
         metrics["last_request_time"] = start_time
         
+        # 模擬高延遲 (Simulate high latency)
+        if fault_state["high_latency"] and fault_state["latency_ms"] > 0:
+            time.sleep(fault_state["latency_ms"] / 1000)
+        
         try:
+            # 檢查資料庫故障狀態 (Check database fault state)
+            if fault_state["database_down"]:
+                metrics["error_requests"] += 1
+                response_time_ms = (time.time() - start_time) * 1000
+                response_time_history.append({
+                    "time": datetime.now().strftime("%H:%M:%S"),
+                    "value": response_time_ms,
+                    "is_error": True
+                })
+                if len(response_time_history) > MAX_HISTORY_POINTS:
+                    response_time_history.pop(0)
+                add_log("error", f"Database connection failed - Service unavailable", "error")
+                from flask import jsonify
+                return jsonify({
+                    "status": "error",
+                    "message": "Database connection failed. Service temporarily unavailable.",
+                    "error_code": "DB_CONNECTION_FAILED"
+                }), 503
+            
             result = f(*args, **kwargs)
             response_time = time.time() - start_time
+            response_time_ms = response_time * 1000
             metrics["total_response_time"] += response_time
+            
+            # 記錄響應時間歷史
+            response_time_history.append({
+                "time": datetime.now().strftime("%H:%M:%S"),
+                "value": response_time_ms,
+                "is_error": False
+            })
+            if len(response_time_history) > MAX_HISTORY_POINTS:
+                response_time_history.pop(0)
+            
             return result
         except Exception as e:
             metrics["error_requests"] += 1
+            add_log("error", f"Request failed: {str(e)}", "error")
             raise e
     
     wrapper.__name__ = f.__name__
@@ -216,8 +302,8 @@ def success():
 @app.route('/logs')
 def get_logs():
     """
-    日誌 API 端點
-    (Logs API endpoint)
+    日誌 API 端點 - 返回歷史日誌記錄
+    (Logs API endpoint - Returns historical log entries)
     """
     current_time = time.time()
     uptime = current_time - metrics["uptime_start"]
@@ -232,65 +318,45 @@ def get_logs():
     if metrics["total_requests"] > 0:
         error_rate = (metrics["error_requests"] / metrics["total_requests"]) * 100
     
-    # 根據實際數據生成動態日誌
+    # 合併歷史日誌和即時狀態日誌
     logs = []
     
-    # 系統啟動日誌
+    # 加入歷史日誌 (最新的在前)
+    logs.extend(reversed(log_history[-20:]))  # 最近 20 條歷史日誌
+    
+    # 系統狀態日誌
     logs.append({
-        "level": "success",
-        "message": f"System started successfully - Uptime: {int(uptime)} seconds",
-        "timestamp": datetime.fromtimestamp(metrics['uptime_start']).strftime("%Y-%m-%d %H:%M:%S")
+        "level": "info",
+        "message": f"[STATUS] Uptime: {int(uptime)}s | Requests: {metrics['total_requests']} | Errors: {metrics['error_requests']}",
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     })
     
-    # 請求統計日誌
-    if metrics['total_requests'] > 0:
-        logs.append({
-            "level": "info",
-            "message": f"Total requests processed: {metrics['total_requests']} | Avg response time: {avg_response_time:.1f}ms",
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        })
-    
-    # 訂單相關日誌
-    if metrics['orders_created'] > 0:
-        logs.append({
-            "level": "success",
-            "message": f"Orders created: {metrics['orders_created']} | Total sales: ${metrics['total_sales']}",
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        })
-    
-    # 錯誤率相關日誌
-    if error_rate > 5:
-        logs.append({
+    # 故障狀態日誌
+    if fault_state["database_down"]:
+        logs.insert(0, {
             "level": "error",
-            "message": f"High error rate detected: {error_rate:.2f}% - Immediate attention required!",
+            "message": "[ALERT] DATABASE IS DOWN - All database operations will fail!",
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+    
+    if fault_state["high_latency"]:
+        logs.insert(0, {
+            "level": "warning",
+            "message": f"[ALERT] High latency injection active: +{fault_state['latency_ms']}ms per request",
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+    
+    # 錯誤率警告
+    if error_rate > 5:
+        logs.insert(0, {
+            "level": "error",
+            "message": f"[CRITICAL] Error rate {error_rate:.2f}% exceeds SLO threshold (5%)!",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
     elif error_rate > 1:
-        logs.append({
+        logs.insert(0, {
             "level": "warning",
-            "message": f"Elevated error rate: {error_rate:.2f}% - Monitoring recommended",
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        })
-    else:
-        logs.append({
-            "level": "info",
-            "message": f"Error rate within normal range: {error_rate:.2f}%",
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        })
-    
-    # 響應時間相關日誌
-    if avg_response_time > 500:
-        logs.append({
-            "level": "warning",
-            "message": f"High response time detected: {avg_response_time:.1f}ms exceeds 500ms threshold",
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        })
-    
-    # 最後請求時間日誌
-    if metrics['last_request_time'] != metrics['uptime_start']:
-        logs.append({
-            "level": "info",
-            "message": f"Last request received at: {datetime.fromtimestamp(metrics['last_request_time']).strftime('%H:%M:%S')}",
+            "message": f"[WARNING] Elevated error rate: {error_rate:.2f}%",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
     
@@ -368,6 +434,154 @@ def get_metrics():
     })
 
 
+# ========================================
+# 故障注入 API (Fault Injection APIs)
+# ========================================
+
+@app.route('/fault/inject', methods=['POST'])
+def inject_fault():
+    """
+    故障注入 API - 模擬系統故障
+    (Fault Injection API - Simulate system failures)
+    
+    支援的故障類型:
+    - database_down: 資料庫連線故障
+    - high_latency: 高延遲 (需指定 latency_ms)
+    
+    Request Body (JSON):
+    {
+        "fault_type": "database_down" | "high_latency",
+        "latency_ms": 2000  // 僅用於 high_latency
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        fault_type = data.get('fault_type', 'database_down')
+        latency_ms = data.get('latency_ms', 2000)
+        
+        if fault_type == 'database_down':
+            fault_state["database_down"] = True
+            add_log("error", "🔴 FAULT INJECTED: Database connection failure simulated", "system")
+            return jsonify({
+                "status": "success",
+                "message": "Database failure injected. All database operations will fail.",
+                "fault_type": "database_down",
+                "current_state": fault_state
+            })
+        
+        elif fault_type == 'high_latency':
+            fault_state["high_latency"] = True
+            fault_state["latency_ms"] = latency_ms
+            add_log("warning", f"🟡 FAULT INJECTED: High latency ({latency_ms}ms) simulated", "system")
+            return jsonify({
+                "status": "success",
+                "message": f"High latency ({latency_ms}ms) injected for all requests.",
+                "fault_type": "high_latency",
+                "latency_ms": latency_ms,
+                "current_state": fault_state
+            })
+        
+        else:
+            return jsonify({
+                "status": "error",
+                "message": f"Unknown fault type: {fault_type}. Supported: database_down, high_latency"
+            }), 400
+            
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to inject fault: {str(e)}"
+        }), 500
+
+
+@app.route('/fault/recover', methods=['POST'])
+def recover_fault():
+    """
+    故障恢復 API - 恢復所有模擬故障
+    (Fault Recovery API - Recover from all simulated failures)
+    
+    Request Body (JSON) - 可選:
+    {
+        "fault_type": "database_down" | "high_latency" | "all"
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        fault_type = data.get('fault_type', 'all')
+        
+        recovered = []
+        
+        if fault_type in ['database_down', 'all'] and fault_state["database_down"]:
+            fault_state["database_down"] = False
+            recovered.append("database_down")
+            add_log("success", "🟢 RECOVERY: Database connection restored", "system")
+        
+        if fault_type in ['high_latency', 'all'] and fault_state["high_latency"]:
+            fault_state["high_latency"] = False
+            fault_state["latency_ms"] = 0
+            recovered.append("high_latency")
+            add_log("success", "🟢 RECOVERY: Normal latency restored", "system")
+        
+        if not recovered:
+            return jsonify({
+                "status": "info",
+                "message": "No active faults to recover from.",
+                "current_state": fault_state
+            })
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Recovered from faults: {', '.join(recovered)}",
+            "recovered_faults": recovered,
+            "current_state": fault_state
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to recover: {str(e)}"
+        }), 500
+
+
+@app.route('/fault/status')
+def fault_status():
+    """
+    故障狀態查詢 API
+    (Fault Status Query API)
+    """
+    return jsonify({
+        "status": "success",
+        "fault_state": fault_state,
+        "is_degraded": fault_state["database_down"] or fault_state["high_latency"],
+        "active_faults": [
+            fault for fault, active in [
+                ("database_down", fault_state["database_down"]),
+                ("high_latency", fault_state["high_latency"])
+            ] if active
+        ]
+    })
+
+
+@app.route('/chart-data')
+def get_chart_data():
+    """
+    圖表數據 API - 返回用於前端圖表的歷史數據
+    (Chart Data API - Returns historical data for frontend charts)
+    """
+    # 計算錯誤率歷史
+    error_count = sum(1 for r in response_time_history if r.get("is_error", False))
+    total_count = len(response_time_history) if response_time_history else 1
+    current_error_rate = (error_count / total_count) * 100
+    
+    return jsonify({
+        "response_times": [r["value"] for r in response_time_history],
+        "timestamps": [r["time"] for r in response_time_history],
+        "error_flags": [r.get("is_error", False) for r in response_time_history],
+        "current_error_rate": round(current_error_rate, 2),
+        "data_points": len(response_time_history)
+    })
+
+
 @app.route('/services')
 def get_services():
     """
@@ -403,8 +617,10 @@ def get_services():
         base_health -= ((avg_response_time - 200) / 100) * 1
     base_health = max(0, min(100, base_health))
     
-    def get_status(health):
+    def get_status(health, is_down=False):
         """根據健康度返回狀態"""
+        if is_down:
+            return "degraded"
         if health >= 95:
             return "healthy"
         elif health >= 80:
@@ -412,45 +628,53 @@ def get_services():
         else:
             return "degraded"
     
+    # 資料庫故障影響計算
+    db_is_down = fault_state["database_down"]
+    db_health = 0 if db_is_down else round(base_health - 1, 1)
+    
+    # 高延遲影響
+    latency_penalty = fault_state["latency_ms"] / 100 if fault_state["high_latency"] else 0
+    
     # 使用 kebab-case 的 key 以匹配 Dashboard 的 SVG 元素 ID
     services = {
         "load-balancer": {
             "name": "Load Balancer",
-            "health": round(base_health, 1),
-            "status": get_status(base_health),
+            "health": round(max(0, base_health - latency_penalty), 1),
+            "status": get_status(base_health - latency_penalty),
             "requests_handled": metrics["total_requests"]
         },
         "api-gateway": {
             "name": "API Gateway", 
-            "health": round(base_health - 1, 1),
-            "status": get_status(base_health - 1),
-            "avg_latency": round(avg_response_time * 0.3, 1)  # Gateway 處理約 30% 的延遲
+            "health": round(max(0, base_health - 1 - latency_penalty), 1),
+            "status": get_status(base_health - 1 - latency_penalty),
+            "avg_latency": round(avg_response_time * 0.3 + fault_state.get("latency_ms", 0) * 0.3, 1)
         },
         "user-service": {
             "name": "User Service",
-            "health": round(base_health - 2, 1),
-            "status": get_status(base_health - 2),
+            "health": round(max(0, base_health - 2 - (50 if db_is_down else 0)), 1),
+            "status": "warning" if db_is_down else get_status(base_health - 2),
             "active_sessions": max(1, metrics["total_requests"] // 3)
         },
         "order-service": {
             "name": "Order Service",
-            "health": round(base_health - 3, 1),
-            "status": get_status(base_health - 3),
+            "health": round(max(0, base_health - 3 - (50 if db_is_down else 0)), 1),
+            "status": "degraded" if db_is_down else get_status(base_health - 3),
             "orders_processed": metrics["orders_created"]
         },
         "payment-service": {
             "name": "Payment Service",
-            "health": round(base_health - 4, 1),
-            "status": get_status(base_health - 4),
+            "health": round(max(0, base_health - 4 - (50 if db_is_down else 0)), 1),
+            "status": "degraded" if db_is_down else get_status(base_health - 4),
             "transactions": metrics["orders_created"],
             "total_amount": metrics["total_sales"]
         },
         "database": {
             "name": "Database",
-            "health": round(base_health - 1, 1),
-            "status": get_status(base_health - 1),
-            "connections": min(100, max(1, metrics["total_requests"] // 2)),
-            "query_time": round(avg_response_time * 0.4, 1)  # DB 處理約 40% 的延遲
+            "health": db_health,
+            "status": get_status(db_health, is_down=db_is_down),
+            "connections": 0 if db_is_down else min(100, max(1, metrics["total_requests"] // 2)),
+            "query_time": 0 if db_is_down else round(avg_response_time * 0.4, 1),
+            "is_down": db_is_down
         },
         "redis-cache": {
             "name": "Redis Cache",
