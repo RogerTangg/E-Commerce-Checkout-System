@@ -86,6 +86,15 @@ def add_log(level, message, category="system"):
     print(f"[{log_entry['timestamp']}] [{level.upper()}] [{category}] {message}")
 
 
+def check_db_connection_or_raise():
+    """
+    檢查資料庫連線狀態，如果資料庫故障則拋出例外
+    (Check database connection status, raise exception if database is down)
+    """
+    if fault_state["database_down"]:
+        raise Exception("Database connection failed. Service temporarily unavailable.")
+
+
 def load_toggles():
     """
     載入 Feature Toggles 設定檔
@@ -739,6 +748,9 @@ def checkout():
                 "message": "無效的付款方式"
             }), 400
         
+        # 生成訂單 ID
+        order_id = f"ORD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{metrics['orders_created'] + 1:04d}"
+        
         # 更新指標
         metrics["orders_created"] += 1
         metrics["total_sales"] += cart_data["total"]
@@ -784,4 +796,3 @@ def after_request(response):
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
 
-    
