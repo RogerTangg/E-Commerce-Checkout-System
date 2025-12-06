@@ -42,19 +42,76 @@
 ## 專案結構 (Project Structure)
 
 ```
-DevOps E-Commerce/
-├── app.py                 # Flask 主程式 (路由、Mock 資料)
-├── requirements.txt       # Python 依賴清單
-├── README.md             # 專案文件 (本檔案)
-├── PRD.md                # 產品需求文件
-├── constitution.md       # 開發準則
-├── static/               # 靜態資源
+E-Commerce-Checkout-System/
+├── .github/                    # GitHub Actions 與 Dependabot 設定
+│   ├── dependabot.yml
+│   └── workflows/
+│       └── deps-audit.yml
+├── config/                     # 配置檔案
+│   └── toggles.json            # Feature Toggle 設定
+├── docs/                       # 專案文件
+│   ├── A12-Reliability-Engineering-Guide.md
+│   ├── PRD.md                  # 產品需求文件
+│   ├── constitution.md         # 開發準則
+│   └── runbook.md              # 維運手冊
+├── src/                        # 應用程式原始碼
+│   ├── __init__.py
+│   ├── app.py                  # Flask 主程式
+│   ├── feature_flags.py        # Feature Flag 模組
+│   ├── routes/                 # 路由模組 (可擴充)
+│   │   └── __init__.py
+│   └── utils/                  # 工具函數 (可擴充)
+│       └── __init__.py
+├── static/                     # 靜態資源
 │   ├── css/
-│   │   └── style.css     # 自訂樣式 (綠色主題、卡片設計)
+│   │   └── style.css
 │   └── js/
-│       └── main.js       # 前端互動邏輯 (表單驗證、AJAX)
-└── templates/            # HTML 模板
-    └── index.html        # 結帳頁面模板
+│       └── main.js
+├── templates/                  # HTML 模板
+│   ├── index.html
+│   ├── cart.html
+│   ├── checkout.html
+│   ├── payment.html
+│   └── success.html
+├── dashboard/                  # 監控 Dashboard
+│   ├── css/
+│   ├── js/
+│   ├── manual.html
+│   ├── observability-dashboard.html
+│   └── settings.html
+├── tests/                      # 測試目錄
+│   ├── __init__.py
+│   ├── test_routes.py          # 路由測試
+│   └── test_feature_flags.py   # Feature Flag 測試
+├── .gitignore
+├── docker-compose.yml          # Docker Compose 設定
+├── Dockerfile                  # Docker 映像檔設定
+├── README.md                   # 專案說明 (本檔案)
+├── requirements.txt            # Python 依賴清單
+└── run.py                      # 應用程式入口點
+```
+
+---
+
+## 快速開始 (Quick Start)
+
+### 1. 安裝依賴
+```bash
+pip install -r requirements.txt
+```
+
+### 2. 啟動應用程式
+```bash
+python run.py
+```
+
+### 3. 開啟瀏覽器
+- **主頁面**: http://localhost:5000
+- **監控 Dashboard**: http://localhost:5000/dashboard/
+
+### 4. 執行測試
+```bash
+pytest tests/ -v
 ```
 
 ---
