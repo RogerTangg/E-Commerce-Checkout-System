@@ -1,4 +1,4 @@
 Flask==2.0.1
 Werkzeug==2.2.3  # Security fix for remote execution vulnerability
-requests==2.26.0
+requests==2.32.4
 pytest>=7.0.0
