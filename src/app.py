@@ -12,7 +12,15 @@ import os
 import time
 from datetime import datetime
 
-app = Flask(__name__)
+# 取得專案根目錄路徑 (Get project root directory)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# 設定 Flask 應用，指向正確的 template 和 static 資料夾
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, 'templates'),
+    static_folder=os.path.join(BASE_DIR, 'static')
+)
 
 
 # ===== Dashboard 靜態文件路由 =====
@@ -23,7 +31,7 @@ def serve_dashboard(filename='observability-dashboard.html'):
     提供 dashboard 資料夾中的靜態文件
     (Serve static files from the dashboard folder)
     """
-    dashboard_dir = os.path.join(app.root_path, 'dashboard')
+    dashboard_dir = os.path.join(BASE_DIR, 'dashboard')
     return send_from_directory(dashboard_dir, filename)
 
 # Mock 購物車資料 (Mock Cart Data)
@@ -103,7 +111,7 @@ def load_toggles():
     Returns:
         dict: Toggle 設定字典，如果檔案不存在則返回預設值
     """
-    toggles_path = os.path.join(os.path.dirname(__file__), 'toggles.json')
+    toggles_path = os.path.join(BASE_DIR, 'config', 'toggles.json')
     
     try:
         with open(toggles_path, 'r', encoding='utf-8') as f:
@@ -541,6 +549,16 @@ def recover_fault():
                 "message": "No active faults to recover from.",
                 "current_state": fault_state
             })
+        
+        # 重置錯誤統計，讓系統恢復健康狀態
+        metrics["error_requests"] = 0
+        metrics["total_requests"] = max(1, metrics["total_requests"])  # 避免除以零
+        
+        # 清除響應時間歷史中的錯誤記錄
+        global response_time_history
+        response_time_history = [r for r in response_time_history if not r.get("is_error", False)]
+        
+        add_log("info", "📊 Metrics reset after recovery - System health restored", "system")
         
         return jsonify({
             "status": "success",
